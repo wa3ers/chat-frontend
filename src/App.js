@@ -4,69 +4,104 @@ import io from "socket.io-client";
 const socket = io("https://chat-backend1-aib9.onrender.com");
 
 function App() {
-  const [username, setUsername] = useState("");
-  const [tempName, setTempName] = useState("");
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const [username, setUsername] = useState("");
+  const [isReady, setIsReady] = useState(false);
 
+  // Bildirim izni iste
+  useEffect(() => {
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Mesaj listener
   useEffect(() => {
     socket.on("chat message", (msg) => {
       setChat((prev) => [...prev, msg]);
+
+      // Bildirim oluştur
+      if (Notification.permission === "granted") {
+        new Notification(`${msg.user}`, {
+          body: msg.text,
+        });
+      }
     });
 
     return () => socket.off("chat message");
   }, []);
 
-  const registerUser = () => {
-    if (tempName.trim() === "") return;
-    setUsername(tempName);
-  };
-
-  const sendMessage = () => {
+  const sendMessage = (e) => {
+    e.preventDefault();
     if (!message.trim()) return;
-    socket.emit("chat message", { user: username, text: message });
+
+    const msg = { user: username, text: message };
+    socket.emit("chat message", msg);
     setMessage("");
   };
 
-  if (!username) {
-    return (
-      <div style={{ textAlign: "center", marginTop: "40px" }}>
-        <h2>Kullanıcı Adı Seç</h2>
-        <input
-          value={tempName}
-          onChange={(e) => setTempName(e.target.value)}
-          placeholder="Kullanıcı adı..."
-        />
-        <button onClick={registerUser}>Giriş</button>
-      </div>
-    );
-  }
+  const handleJoin = () => {
+    if (!username.trim()) return;
+    setIsReady(true);
+  };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>Chat</h1>
-
-      <div
-        style={{
-          border: "1px solid #ccc",
-          height: "300px",
-          overflowY: "scroll",
-          padding: "10px",
-        }}
-      >
-        {chat.map((c, i) => (
-          <div key={i}>
-            <b>{c.user}:</b> {c.text}
+    <div style={{ padding: "2rem", fontFamily: "Arial" }}>
+      {!isReady ? (
+        <div style={{ maxWidth: "240px", margin: "auto", textAlign: "center" }}>
+          <h2>Kullanıcı Adı</h2>
+          <input
+            type="text"
+            placeholder="Adınızı yazın..."
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            style={{ width: "100%", padding: "8px", marginBottom: "10px" }}
+          />
+          <button
+            onClick={handleJoin}
+            style={{ padding: "8px 16px", cursor: "pointer" }}
+          >
+            Giriş
+          </button>
+        </div>
+      ) : (
+        <>
+          <h1>Chat</h1>
+          <div
+            style={{
+              border: "1px solid #ccc",
+              padding: "1rem",
+              height: "320px",
+              overflowY: "scroll",
+              marginBottom: "1rem",
+            }}
+          >
+            {chat.map((c, i) => (
+              <div key={i} style={{ marginBottom: "6px" }}>
+                <b>{c.user}:</b> {c.text}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <input
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Mesaj yaz..."
-      />
-      <button onClick={sendMessage}>Gönder</button>
+          <form onSubmit={sendMessage}>
+            <input
+              type="text"
+              placeholder="Mesaj yaz..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              style={{
+                width: "75%",
+                padding: "8px",
+                marginRight: "6px",
+              }}
+            />
+            <button type="submit" style={{ padding: "8px 16px" }}>
+              Gönder
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
