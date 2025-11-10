@@ -14,71 +14,59 @@ function App() {
       setChat((prev) => [...prev, msg]);
     });
 
-    return () => {
-      socket.off("chat message");
-    };
+    return () => socket.off("chat message");
   }, []);
 
-  const saveName = () => {
+  const registerUser = () => {
     if (tempName.trim() === "") return;
     setUsername(tempName);
   };
 
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (message.trim() === "") return;
-
-    const msg = {
-      user: username || "Anonim",
-      text: message,
-    };
-
-    socket.emit("chat message", msg);
+  const sendMessage = () => {
+    if (!message.trim()) return;
+    socket.emit("chat message", { user: username, text: message });
     setMessage("");
   };
 
   if (!username) {
     return (
-      <div style={{ padding: "2rem" }}>
-        <h2>Kullanıcı adı gir</h2>
+      <div style={{ textAlign: "center", marginTop: "40px" }}>
+        <h2>Kullanıcı Adı Seç</h2>
         <input
-          type="text"
           value={tempName}
           onChange={(e) => setTempName(e.target.value)}
+          placeholder="Kullanıcı adı..."
         />
-        <button onClick={saveName}>Kaydet</button>
+        <button onClick={registerUser}>Giriş</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1>React Chat</h1>
+    <div style={{ padding: "20px" }}>
+      <h1>Chat</h1>
 
       <div
         style={{
           border: "1px solid #ccc",
-          padding: "1rem",
           height: "300px",
           overflowY: "scroll",
+          padding: "10px",
         }}
       >
-        {chat.map((c, index) => (
-          <div key={index}>
+        {chat.map((c, i) => (
+          <div key={i}>
             <b>{c.user}:</b> {c.text}
           </div>
         ))}
       </div>
 
-      <form onSubmit={sendMessage}>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Mesaj yaz..."
-        />
-        <button type="submit">Gönder</button>
-      </form>
+      <input
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Mesaj yaz..."
+      />
+      <button onClick={sendMessage}>Gönder</button>
     </div>
   );
 }
