@@ -1,178 +1,126 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 
-// ✅ BACKEND URL
 const socket = io("https://chat-backend1-aib9.onrender.com");
-
-// ✅ Ses dosyası
-const notifySound = new Audio("/notify.mp3");
-
-// ✅ Favicon değişim
-let flashInterval = null;
-const originalFavicon = "/favicon.ico";
-const altFavicon = "/favicon-alert.ico";
-
-function startFaviconFlash() {
-  if (flashInterval) return;
-
-  flashInterval = setInterval(() => {
-    const favicon = document.querySelector("link[rel='icon']");
-    if (!favicon) return;
-    favicon.href = favicon.href.includes(originalFavicon)
-      ? altFavicon
-      : originalFavicon;
-  }, 600);
-}
-
-function stopFaviconFlash() {
-  clearInterval(flashInterval);
-  flashInterval = null;
-
-  const favicon = document.querySelector("link[rel='icon']");
-  if (favicon) favicon.href = originalFavicon;
-}
 
 function App() {
   const [username, setUsername] = useState("");
-  const [isReady, setIsReady] = useState(false);
-
+  const [tempName, setTempName] = useState("");
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const audioRef = useRef(null);
+  const originalTitle = useRef(document.title);
+  const blinkInterval = useRef(null);
 
-  // ✅ İlk giriş ekranı
-  const handleLogin = () => {
-    if (!username.trim()) return;
-    setIsReady(true);
-    localStorage.setItem("username", username);
-  };
-
-  // ✅ Daha önce giriş yapılmışsa otomatik gir
+  // 🔔 Sayfa görünür olduğunda başlığı sıfırla
   useEffect(() => {
-    const saved = localStorage.getItem("username");
-    if (saved) {
-      setUsername(saved);
-      setIsReady(true);
-    }
+    const handleVisibility = () => {
+      if (!document.hidden) stopBlinking();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
-  // ✅ Mesaj geldiğinde
+  // ✅ Socket mesajlarını dinle
   useEffect(() => {
     socket.on("chat message", (msg) => {
       setChat((prev) => [...prev, msg]);
 
-      // ✅ Ses çal
-      try {
-        notifySound.play();
-      } catch (e) {}
-
-      // ✅ Favicon animasyonu başlat
-      if (!document.hasFocus()) startFaviconFlash();
+      if (msg.user !== username) {
+        playNotify();
+      }
     });
 
     return () => socket.off("chat message");
-  }, []);
+  }, [username]);
 
-  // ✅ Sekme görünür olunca favicon resetle
-  useEffect(() => {
-    const onFocus = () => stopFaviconFlash();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  // ✅ Bildirim sesi
+  const playNotify = () => {
+    try {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+      }
+    } catch {}
+    startBlinking();
+  };
+
+  // ✅ Başlık yanıp söner
+  const startBlinking = () => {
+    if (blinkInterval.current) return;
+
+    blinkInterval.current = setInterval(() => {
+      document.title =
+        document.title === originalTitle.current ? "🔴 Yeni Mesaj!" : originalTitle.current;
+    }, 700);
+  };
+
+  // ✅ Blink durdur
+  const stopBlinking = () => {
+    clearInterval(blinkInterval.current);
+    blinkInterval.current = null;
+    document.title = originalTitle.current;
+  };
 
   // ✅ Mesaj gönder
   const sendMessage = (e) => {
     e.preventDefault();
     if (!message.trim()) return;
 
-    const msg = { user: username || "Anonim", text: message };
+    const msg = { user: username, text: message };
     socket.emit("chat message", msg);
     setMessage("");
+    stopBlinking();
   };
 
-  // ✅ Giriş ekranı
-  if (!isReady) {
+  // ✅ Kullanıcı adı seçimi
+  if (!username) {
     return (
-      <div style={styles.loginWrapper}>
-        <div style={styles.loginBox}>
-          <h2>Kullanıcı Adı</h2>
-          <input
-            style={styles.input}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Kullanıcı adın..."
-          />
-          <button style={styles.button} onClick={handleLogin}>
-            Giriş
-          </button>
-        </div>
+      <div style={{ padding: "2rem" }}>
+        <h2>İsmini gir:</h2>
+        <input
+          value={tempName}
+          onChange={(e) => setTempName(e.target.value)}
+          placeholder="Kullanıcı adı..."
+        />
+        <button onClick={() => tempName && setUsername(tempName)}>Devam</button>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <h1>Sohbet</h1>
+    <div style={{ padding: "2rem" }}>
+      <h1>Chat</h1>
 
-      <div style={styles.chatBox}>
-        {chat.map((c, index) => (
-          <div key={index}>
+      {/* ses dosyası */}
+      <audio ref={audioRef} src="/notify.mp3" preload="auto" />
+
+      <div
+        style={{
+          border: "1px solid #ccc",
+          height: "400px",
+          overflowY: "scroll",
+          padding: "1rem",
+        }}
+      >
+        {chat.map((c, i) => (
+          <div key={i}>
             <b>{c.user}:</b> {c.text}
           </div>
         ))}
       </div>
 
-      <form onSubmit={sendMessage} style={styles.form}>
+      <form onSubmit={sendMessage} style={{ marginTop: "10px" }}>
         <input
-          style={styles.input}
-          type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Mesaj yaz..."
+          style={{ width: "250px" }}
         />
-        <button style={styles.button} type="submit">
-          Gönder
-        </button>
+        <button type="submit">Gönder</button>
       </form>
     </div>
   );
 }
-
-const styles = {
-  container: { padding: "2rem", maxWidth: 600, margin: "auto" },
-
-  chatBox: {
-    border: "1px solid #ccc",
-    padding: "1rem",
-    height: "350px",
-    overflowY: "scroll",
-    marginBottom: "1rem",
-  },
-
-  form: { display: "flex", gap: "0.5rem" },
-  input: {
-    flex: 1,
-    padding: "0.5rem",
-    fontSize: "1rem",
-  },
-  button: {
-    padding: "0.5rem 1rem",
-    fontSize: "1rem",
-    cursor: "pointer",
-  },
-
-  loginWrapper: {
-    height: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  loginBox: {
-    border: "1px solid #ccc",
-    padding: "1.5rem",
-    borderRadius: 8,
-    textAlign: "center",
-  },
-};
 
 export default App;
