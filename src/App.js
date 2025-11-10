@@ -1,169 +1,174 @@
-// src/App.js
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
-import notifySound from "./notify.mp3"; // MP3 artık src klasöründe
+import notifySound from "./notify.mp3";
 
-// Backend URL'in (Render)
-const socket = io("https://chat-backend1-aib9.onrender.com", {
-  transports: ["websocket", "polling"],
-});
+//  ✅ Backend URL
+const socket = io("https://chat-backend1-aib9.onrender.com");
 
-export default function App() {
-  const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
+function App() {
+  const [username, setUsername] = useState("");
+  const [inputName, setInputName] = useState("");
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
-  const [audioReady, setAudioReady] = useState(false);
   const audioRef = useRef(null);
+  const scrollRef = useRef(null);
 
-  // Bildirim izni
+  // ✅ Scroll hep aşağı insin
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, []);
+  }, [chat]);
 
-  // Socket dinleyicileri
+  // ✅ Bildirim göster
+  const showNotification = (title, body) => {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          new Notification(title, { body });
+        }
+      });
+    }
+  };
+
+  // ✅ Socket mesaj dinleme
   useEffect(() => {
-    socket.on("connect", () => {
-      if (username) socket.emit("user ready", username);
-    });
+    audioRef.current = new Audio(notifySound);
 
     socket.on("chat message", (msg) => {
       setChat((prev) => [...prev, msg]);
 
-      const fromOther = !username || msg.user !== username;
-      if (fromOther) {
-        // Sekme arkadaysa tarayıcı bildirimi
-        if (
-          "Notification" in window &&
-          Notification.permission === "granted" &&
-          document.hidden
-        ) {
-          new Notification(`${msg.user}`, { body: msg.text });
-        }
-        // Ses
-        if (audioRef.current && audioReady) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(() => {});
-        }
+      if (msg.user !== username) {
+        audioRef.current.play().catch(() => {});
+        showNotification(msg.user, msg.text);
       }
     });
 
-    return () => {
-      socket.off("connect");
-      socket.off("chat message");
-    };
-  }, [username, audioReady]);
+    return () => socket.off("chat message");
+  }, [username]);
 
-  // Sesi kilitten çıkar (ilk etkileşimde bir kez)
-  const unlockAudio = () => {
-    if (!audioRef.current) return;
-    // Kısa bir “play & pause” hilesi
-    audioRef.current.muted = false;
-    audioRef.current.volume = 1;
-    audioRef.current
-      .play()
-      .then(() => {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        setAudioReady(true);
-      })
-      .catch(() => {
-        // Bazı tarayıcılarda bir daha denemek için buton görünür kalır
-      });
-  };
-
-  const submitUsername = (e) => {
-    e.preventDefault();
-    const name = username.trim() || "Anonim";
-    setUsername(name);
-    localStorage.setItem("username", name);
-    socket.emit("user ready", name);
-    unlockAudio(); // kullanıcı adı girince kesin etkileşim var
-  };
-
+  // ✅ Mesaj gönder
   const sendMessage = (e) => {
     e.preventDefault();
-    const text = message.trim();
-    if (!text) return;
-    const name = username || "Anonim";
-    const msg = { user: name, text };
+    if (!message.trim()) return;
+
+    const msg = { user: username, text: message };
     socket.emit("chat message", msg);
     setMessage("");
   };
 
-  // Basit UI
+  // ✅ İsim girilmemişse kullanıcı adını iste
+  if (!username) {
+    return (
+      <div style={styles.centerBox}>
+        <h2>Kullanıcı adını yaz</h2>
+
+        <input
+          value={inputName}
+          onChange={(e) => setInputName(e.target.value)}
+          placeholder="Adınız..."
+          style={styles.input}
+        />
+
+        <button
+          onClick={() => setUsername(inputName)}
+          style={styles.button}
+        >
+          Giriş
+        </button>
+
+        <br />
+        <button
+          onClick={() => Notification.requestPermission()}
+          style={styles.notif}
+        >
+          🔔 Bildirim Aç
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div
-      onClick={() => {
-        if (!audioReady) unlockAudio();
-      }}
-      style={{ padding: "2rem", maxWidth: 900, margin: "0 auto" }}
-    >
-      {/* Gizli ses oynatıcı */}
-      <audio ref={audioRef} src={notifySound} preload="auto" />
+    <div style={styles.container}>
+      <h2>Hoşgeldin {username} 👋</h2>
 
-      <h1>Chat</h1>
-
-      {!username ? (
-        <form onSubmit={submitUsername} style={{ marginBottom: 16 }}>
-          <input
-            type="text"
-            placeholder="Kullanıcı adı..."
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{ padding: 8, width: 240, marginRight: 8 }}
-          />
-          <button type="submit">Giriş</button>
-          {!audioReady && (
-            <button type="button" onClick={unlockAudio} style={{ marginLeft: 8 }}>
-              🔔 Sesi Aç
-            </button>
-          )}
-        </form>
-      ) : (
-        <div style={{ marginBottom: 12 }}>
-          <b>Hoş geldin:</b> {username}{" "}
-          {!audioReady && (
-            <button onClick={unlockAudio} style={{ marginLeft: 8 }}>
-              🔔 Bildirim Sesini Aç
-            </button>
-          )}
-        </div>
-      )}
-
-      <div
-        style={{
-          border: "1px solid #ccc",
-          borderRadius: 6,
-          padding: 12,
-          height: 300,
-          overflowY: "auto",
-          marginBottom: 12,
-          background: "#fff",
-        }}
+      <button
+        onClick={() => Notification.requestPermission()}
+        style={styles.notif}
       >
+        🔔 Bildirim Aç
+      </button>
+
+      <div ref={scrollRef} style={styles.chatBox}>
         {chat.map((c, i) => (
-          <div key={i}>
+          <div key={i} style={c.user === username ? styles.myMsg : styles.otherMsg}>
             <b>{c.user}:</b> {c.text}
           </div>
         ))}
       </div>
 
-      <form onSubmit={sendMessage}>
+      <form onSubmit={sendMessage} style={styles.form}>
         <input
-          type="text"
-          placeholder="Mesaj yaz..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          style={{ padding: 8, width: 260, marginRight: 8 }}
-          onFocus={() => {
-            // odak da bir etkileşim sayılır
-            if (!audioReady) unlockAudio();
-          }}
+          placeholder="Mesaj yaz..."
+          style={styles.input}
         />
-        <button type="submit">Gönder</button>
+        <button type="submit" style={styles.button}>
+          Gönder
+        </button>
       </form>
     </div>
   );
 }
+
+export default App;
+
+/* ✅ Basit stiller */
+const styles = {
+  container: {
+    padding: "20px",
+    maxWidth: "500px",
+    margin: "auto",
+    textAlign: "center",
+  },
+  chatBox: {
+    border: "1px solid #ccc",
+    height: "330px",
+    overflowY: "auto",
+    padding: "10px",
+    marginBottom: "10px",
+  },
+  myMsg: {
+    textAlign: "right",
+    margin: "5px 0",
+    color: "blue",
+  },
+  otherMsg: {
+    textAlign: "left",
+    margin: "5px 0",
+  },
+  form: {
+    display: "flex",
+    gap: "10px",
+  },
+  input: {
+    flex: 1,
+    padding: "8px",
+  },
+  button: {
+    padding: "8px 15px",
+  },
+  notif: {
+    padding: "5px 10px",
+    marginBottom: "10px",
+  },
+  centerBox: {
+    padding: "40px",
+    textAlign: "center",
+  },
+};
