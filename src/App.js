@@ -1,124 +1,114 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
+import notifySound from "./notify.mp3";
 
 const socket = io("https://chat-backend1-aib9.onrender.com");
 
 function App() {
   const [username, setUsername] = useState("");
-  const [tempName, setTempName] = useState("");
-  const [message, setMessage] = useState("");
-  const [chat, setChat] = useState([]);
-  const audioRef = useRef(null);
-  const originalTitle = useRef(document.title);
-  const blinkInterval = useRef(null);
+  const [tempUsername, setTempUsername] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const messagesEndRef = useRef(null);
 
-  // 🔔 Sayfa görünür olduğunda başlığı sıfırla
+  // Bildirim sesi
+  const playNotification = () => {
+    try {
+      const audio = new Audio(notifySound);
+      audio.play().catch(() => {});
+    } catch (err) {
+      console.log("Ses çalınamadı:", err);
+    }
+  };
+
+  // Yeni mesaj geldiğinde
   useEffect(() => {
-    const handleVisibility = () => {
-      if (!document.hidden) stopBlinking();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
+    socket.on("message", (msg) => {
+      setMessages((prev) => [...prev, msg]);
 
-  // ✅ Socket mesajlarını dinle
-  useEffect(() => {
-    socket.on("chat message", (msg) => {
-      setChat((prev) => [...prev, msg]);
-
-      if (msg.user !== username) {
-        playNotify();
+      // Eğer aktif pencerede değilsek bildirim çalsın
+      if (!document.hasFocus()) {
+        playNotification();
       }
     });
 
-    return () => socket.off("chat message");
-  }, [username]);
+    return () => socket.off("message");
+  }, []);
 
-  // ✅ Bildirim sesi
-  const playNotify = () => {
-    try {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
-      }
-    } catch {}
-    startBlinking();
+  // Scroll follow
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Kullanıcı adını onaylama
+  const handleSetUsername = () => {
+    if (!tempUsername.trim()) return;
+    setUsername(tempUsername.trim());
   };
 
-  // ✅ Başlık yanıp söner
-  const startBlinking = () => {
-    if (blinkInterval.current) return;
+  // Mesaj gönderme
+  const sendMessage = () => {
+    if (!inputMessage.trim() || !username) return;
 
-    blinkInterval.current = setInterval(() => {
-      document.title =
-        document.title === originalTitle.current ? "🔴 Yeni Mesaj!" : originalTitle.current;
-    }, 700);
+    const messageData = { user: username, text: inputMessage };
+    socket.emit("message", messageData);
+    setInputMessage("");
   };
 
-  // ✅ Blink durdur
-  const stopBlinking = () => {
-    clearInterval(blinkInterval.current);
-    blinkInterval.current = null;
-    document.title = originalTitle.current;
+  // Enter tuşu
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") sendMessage();
   };
 
-  // ✅ Mesaj gönder
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!message.trim()) return;
-
-    const msg = { user: username, text: message };
-    socket.emit("chat message", msg);
-    setMessage("");
-    stopBlinking();
-  };
-
-  // ✅ Kullanıcı adı seçimi
+  // Username ekranı
   if (!username) {
     return (
-      <div style={{ padding: "2rem" }}>
-        <h2>İsmini gir:</h2>
+      <div style={{ padding: 20 }}>
+        <h2>Kullanıcı Adı</h2>
         <input
-          value={tempName}
-          onChange={(e) => setTempName(e.target.value)}
-          placeholder="Kullanıcı adı..."
+          type="text"
+          placeholder="Adın..."
+          value={tempUsername}
+          onChange={(e) => setTempUsername(e.target.value)}
         />
-        <button onClick={() => tempName && setUsername(tempName)}>Devam</button>
+        <button onClick={handleSetUsername}>Kaydet</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "2rem" }}>
+    <div style={{ padding: 20 }}>
       <h1>Chat</h1>
 
-      {/* ses dosyası */}
-      <audio ref={audioRef} src="/notify.mp3" preload="auto" />
-
+      {/* Mesajlar */}
       <div
         style={{
-          border: "1px solid #ccc",
-          height: "400px",
-          overflowY: "scroll",
-          padding: "1rem",
+          width: "100%",
+          height: "60vh",
+          border: "1px solid black",
+          overflowY: "auto",
+          marginBottom: 10,
+          padding: 10,
         }}
       >
-        {chat.map((c, i) => (
-          <div key={i}>
-            <b>{c.user}:</b> {c.text}
-          </div>
+        {messages.map((msg, index) => (
+          <p key={index}>
+            <strong>{msg.user}:</strong> {msg.text}
+          </p>
         ))}
+
+        <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={sendMessage} style={{ marginTop: "10px" }}>
-        <input
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Mesaj yaz..."
-          style={{ width: "250px" }}
-        />
-        <button type="submit">Gönder</button>
-      </form>
+      {/* Input */}
+      <input
+        placeholder="Mesaj yaz..."
+        value={inputMessage}
+        onChange={(e) => setInputMessage(e.target.value)}
+        onKeyDown={handleKeyPress}
+        style={{ width: 200 }}
+      />
+      <button onClick={sendMessage}>Gönder</button>
     </div>
   );
 }
