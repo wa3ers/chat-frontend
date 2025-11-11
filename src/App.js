@@ -1,147 +1,110 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 
-const backendURL = "https://chat-backend1-aib9.onrender.com";
-
-const socket = io(backendURL, {
-  transports: ["websocket", "polling"],
+const socket = io("https://chat-backend-cisd.onrender.com", {
+  transports: ["websocket"],
 });
-
-// ✅ Global erişim için
-window.socket = socket;
 
 function App() {
   const [messages, setMessages] = useState([]);
-  const [message, setMessage] = useState("");
-  const [user, setUser] = useState("");
-  const [notifReady, setNotifReady] = useState(false);
-  const [soundReady, setSoundReady] = useState(false);
+  const [input, setInput] = useState("");
+  const [username, setUsername] = useState("");
+  const [finalName, setFinalName] = useState("");
+  const [permission, setPermission] = useState(false);
 
   const audioRef = useRef(null);
 
-  // ✅ Bildirim + Ses Aç
-  const enableNotifAndSound = async () => {
-    // Bildirim izni
-    if ("Notification" in window) {
-      try {
-        const perm = await Notification.requestPermission();
-        setNotifReady(perm === "granted");
-      } catch {
-        setNotifReady(false);
-      }
-    }
-
-    // Ses izni (MOBIL İÇİN ÇOK ÖNEMLİ)
-    try {
-      await audioRef.current.play();
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setSoundReady(true);
-    } catch {
-      setSoundReady(false);
-    }
-  };
-
-  // ✅ Gelen mesajları dinle
   useEffect(() => {
     socket.on("message", (msg) => {
       setMessages((prev) => [...prev, msg]);
 
-      // ✅ Kendi mesajında ses çalma → YOK
-      if (msg.user === user) return;
-
-      // ✅ BİLDİRİM
-      if (notifReady && Notification.permission === "granted") {
-        new Notification(`${msg.user}: ${msg.text}`);
-      }
-
-      // ✅ SES
-      if (soundReady && audioRef.current) {
-        audioRef.current.currentTime = 0;
+      if (msg.user !== finalName && permission && audioRef.current) {
         audioRef.current.play().catch(() => {});
       }
     });
 
-    return () => socket.off("message");
-  }, [notifReady, soundReady, user]);
+    return () => {
+      socket.off("message");
+    };
+  }, [finalName, permission]);
 
-  // ✅ Mesaj gönder
   const sendMessage = () => {
-    if (!message.trim()) return;
-
-    const newMsg = { user, text: message };
-    socket.emit("message", newMsg);
-
-    setMessages((prev) => [...prev, newMsg]); // Anında göster
-    setMessage("");
+    if (!input.trim()) return;
+    socket.emit("message", { user: finalName, text: input });
+    setInput("");
   };
 
-  return (
-    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <h1>Chat</h1>
+  const joinChat = () => {
+    if (!username.trim()) return;
+    setFinalName(username);
+  };
 
-      <button
-        onClick={enableNotifAndSound}
-        style={{
-          background: "#ffd74b",
-          padding: "8px 16px",
-          borderRadius: "6px",
-          cursor: "pointer",
-        }}
-      >
-        🔔 Bildirim & 🔊 Ses Aç
-      </button>
+  const enableNotify = async () => {
+    try {
+      await Notification.requestPermission();
+      setPermission(true);
+    } catch {}
+  };
 
-      <div style={{ marginTop: "10px" }}>
-        Bildirim: {notifReady ? "Açık ✅" : "Kapalı ❌"} | Ses:{" "}
-        {soundReady ? "Hazır ✅" : "Kapalı ❌"}
+  if (!finalName) {
+    return (
+      <div style={{ padding: 20 }}>
+        <h2>İsmini Gir</h2>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Kullanıcı adı"
+        />
+        <button onClick={joinChat}>Giriş</button>
       </div>
+    );
+  }
 
-      {!user && (
-        <div style={{ marginTop: "15px" }}>
-          <span>İsim girin: </span>
-          <input
-            value={user}
-            onChange={(e) => setUser(e.target.value)}
-            placeholder="İsim..."
-          />
-        </div>
+  return (
+    <div style={{ padding: 20 }}>
+      <audio ref={audioRef} src="/notify.mp3" />
+
+      {!permission && (
+        <button
+          onClick={enableNotify}
+          style={{
+            background: "orange",
+            padding: "8px 16px",
+            borderRadius: 8,
+            marginBottom: 10,
+          }}
+        >
+          Bildirim & Ses Aç
+        </button>
       )}
+
+      <h2>Hoş geldin, {finalName}</h2>
 
       <div
         style={{
-          marginTop: "15px",
-          border: "1px solid #ccc",
-          padding: "10px",
-          height: "300px",
+          border: "1px solid #aaa",
+          padding: 10,
+          height: 300,
           overflowY: "auto",
-          borderRadius: "6px",
         }}
       >
         {messages.map((msg, i) => (
-          <div key={i}>
+          <div key={i} style={{ marginBottom: 8 }}>
             <b>{msg.user}:</b> {msg.text}
           </div>
         ))}
       </div>
 
-      <div style={{ marginTop: "10px", display: "flex", gap: "5px" }}>
+      <div style={{ marginTop: 10 }}>
         <input
-          style={{ flex: 1 }}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          style={{ width: "70%" }}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Mesaj yaz..."
         />
         <button onClick={sendMessage}>Gönder</button>
       </div>
-
-      {/* ✅ SES ELEMENTI → Mobil uyumlu */}
-      <audio
-        ref={audioRef}
-        src="/notify.mp3"
-        preload="auto"
-        playsInline
-      />
     </div>
   );
 }
