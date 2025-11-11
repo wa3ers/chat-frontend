@@ -1,128 +1,89 @@
-import React, { useEffect, useState, useRef } from "react";
-import { io } from "socket.io-client";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import io from "socket.io-client";
+import ChatHeader from "./components/ChatHeader";
+import MessageList from "./components/MessageList";
+import MessageInput from "./components/MessageInput";
+import "./styles.css";
 
-const SOCKET_URL = "https://chat-backend1-aib9.onrender.com";
+// ✅ Backend URL’in (Render)
+const BACKEND_URL = "https://chat-backend1-aib9.onrender.com";
 
-const socket = io(SOCKET_URL, {
-  transports: ["websocket", "polling"],
-});
-
-function App() {
-  const [username, setUsername] = useState("");
-  const [inputName, setInputName] = useState("");
-  const [message, setMessage] = useState("");
+export default function App() {
+  const [username, setUsername] = useState(() => {
+    const saved = localStorage.getItem("username");
+    return saved || "";
+  });
   const [messages, setMessages] = useState([]);
+  const [connected, setConnected] = useState(false);
 
-  const [notifEnabled, setNotifEnabled] = useState(false);
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  const socket = useMemo(() => io(BACKEND_URL, { transports: ["websocket"] }), []);
+  const bottomRef = useRef(null);
 
-  const audioRef = useRef(null);
-
-  // Bildirim sesi yükle
+  // İlk girişte kullanıcı adını al
   useEffect(() => {
-    audioRef.current = new Audio("/notify.mp3");
-  }, []);
+    if (!username) {
+      const u = prompt("Kullanıcı adın?")?.trim() || "Anonim";
+      setUsername(u);
+      localStorage.setItem("username", u);
+    }
+  }, [username]);
 
-  // 🔥 Socket bağlanınca
+  // Socket bağlan & event’ler
   useEffect(() => {
-    socket.on("connect", () => console.log("✅ Socket bağlandı"));
-    socket.on("disconnect", () => console.log("❌ Socket koptu"));
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
 
-    // Gelen mesaj
-    socket.on("chatMessage", (data) => {
-      setMessages((prev) => [...prev, data]);
-
-      if (audioEnabled && audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
-      }
-
-      if (notifEnabled && document.hidden) {
-        new Notification(`${data.user}: ${data.text}`);
-      }
+    socket.on("chatMessage", (msg) => {
+      setMessages((prev) => [...prev, msg]);
     });
 
     return () => {
+      socket.off("connect");
+      socket.off("disconnect");
       socket.off("chatMessage");
+      socket.close();
     };
-  }, [audioEnabled, notifEnabled]);
+  }, [socket]);
 
-  // Bildirim izni
-  const enableNotification = async () => {
-    let perm = await Notification.requestPermission();
-    if (perm === "granted") {
-      setNotifEnabled(true);
-    } else {
-      alert("Bildirim izni verilmedi!");
-    }
-  };
+  // Her mesaj sonrası en alta kaydır
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const enableSound = () => {
-    setAudioEnabled(true);
-  };
+  const sendMessage = (text) => {
+    const clean = text.trim();
+    if (!clean) return;
 
-  // Mesaj gönderme
-  const sendMessage = () => {
-    if (!message.trim() || !username) return;
-    const data = { user: username, text: message };
-    socket.emit("chatMessage", data);
-    setMessage("");
-  };
+    const payload = {
+      user: username || "Anonim",
+      text: clean,
+      ts: Date.now(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    };
 
-  const startChat = () => {
-    if (inputName.trim()) {
-      setUsername(inputName.trim());
-    }
+    // Optimistic UI: önce ekranda göster, sonra emit et
+    setMessages((prev) => [...prev, payload]);
+    socket.emit("chatMessage", payload);
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      {!username ? (
-        <div>
-          <h2>Kullanıcı adını gir:</h2>
-          <input
-            value={inputName}
-            onChange={(e) => setInputName(e.target.value)}
-          />
-          <button onClick={startChat}>Başla</button>
-        </div>
-      ) : (
-        <>
-          <h1>Hoş geldin, {username}</h1>
+    <div className="chat-page">
+      <div className="chat-card">
+        <ChatHeader
+          title="Sohbet"
+          subtitle={connected ? "Çevrimiçi" : "Bağlantı yok"}
+          me={username || "Anonim"}
+          online={connected}
+        />
 
-          <button onClick={enableNotification}>🔔 Bildirim Aç</button>
-          <button onClick={enableSound}>🔊 Ses Aç</button>
+        <MessageList
+          messages={messages}
+          me={username}
+          bottomRef={bottomRef}
+        />
 
-          <div
-            style={{
-              width: "100%",
-              height: 400,
-              border: "1px solid gray",
-              overflowY: "auto",
-              marginTop: 20,
-              padding: 10,
-            }}
-          >
-            {messages.map((m, i) => (
-              <div key={i}>
-                <b>{m.user}</b>: {m.text}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <input
-              style={{ width: "80%" }}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Mesaj yaz..."
-            />
-            <button onClick={sendMessage}>Gönder</button>
-          </div>
-        </>
-      )}
+        <MessageInput onSend={sendMessage} />
+      </div>
     </div>
   );
 }
-
-export default App;
