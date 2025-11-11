@@ -1,110 +1,110 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import io from "socket.io-client";
 
-const socket = io("https://chat-backend-cisd.onrender.com", {
+const socket = io("https://chat-backend1-ai8g.onrender.com", {
   transports: ["websocket"],
 });
 
 function App() {
+  const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
+  const [tempName, setTempName] = useState("");
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [username, setUsername] = useState("");
-  const [finalName, setFinalName] = useState("");
-  const [permission, setPermission] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [notifAllowed, setNotifAllowed] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
 
   const audioRef = useRef(null);
 
   useEffect(() => {
-    socket.on("message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    socket.on("chat message", (msgObj) => {
+      setMessages((prev) => [...prev, msgObj]);
 
-      if (msg.user !== finalName && permission && audioRef.current) {
-        audioRef.current.play().catch(() => {});
+      if (notifAllowed && document.hidden) {
+        new Notification(`${msgObj.username}: ${msgObj.text}`);
+      }
+
+      if (audioReady) {
+        audioRef.current?.play?.();
       }
     });
 
-    return () => {
-      socket.off("message");
-    };
-  }, [finalName, permission]);
+    return () => socket.off("chat message");
+  }, [notifAllowed, audioReady]);
+
+  const requestPermission = () => {
+    Notification.requestPermission().then((perm) => {
+      if (perm === "granted") {
+        setNotifAllowed(true);
+      }
+    });
+  };
+
+  const enableSound = () => {
+    audioRef.current.play().then(() => {
+      setAudioReady(true);
+    });
+  };
+
+  const saveName = () => {
+    if (tempName.trim().length > 0) {
+      setUsername(tempName);
+      localStorage.setItem("username", tempName);
+    }
+  };
 
   const sendMessage = () => {
-    if (!input.trim()) return;
-    socket.emit("message", { user: finalName, text: input });
-    setInput("");
+    if (!msg.trim() || !username.trim()) return;
+    socket.emit("chat message", { username, text: msg });
+    setMsg("");
   };
 
-  const joinChat = () => {
-    if (!username.trim()) return;
-    setFinalName(username);
-  };
-
-  const enableNotify = async () => {
-    try {
-      await Notification.requestPermission();
-      setPermission(true);
-    } catch {}
-  };
-
-  if (!finalName) {
+  if (!username) {
     return (
       <div style={{ padding: 20 }}>
-        <h2>İsmini Gir</h2>
+        <h2>İsminizi girin:</h2>
         <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Kullanıcı adı"
+          value={tempName}
+          onChange={(e) => setTempName(e.target.value)}
         />
-        <button onClick={joinChat}>Giriş</button>
+        <button onClick={saveName}>Kaydet</button>
       </div>
     );
   }
 
   return (
     <div style={{ padding: 20 }}>
-      <audio ref={audioRef} src="/notify.mp3" />
+      <h2>Hoş geldin, {username}</h2>
 
-      {!permission && (
-        <button
-          onClick={enableNotify}
-          style={{
-            background: "orange",
-            padding: "8px 16px",
-            borderRadius: 8,
-            marginBottom: 10,
-          }}
-        >
-          Bildirim & Ses Aç
-        </button>
-      )}
+      <div style={{ marginBottom: 10 }}>
+        <button onClick={requestPermission}>🔔 Bildirim Aç</button>
+        <button onClick={enableSound}>🔊 Ses Aç</button>
+      </div>
 
-      <h2>Hoş geldin, {finalName}</h2>
+      <audio ref={audioRef} src="/notify.mp3" preload="auto" />
 
       <div
         style={{
-          border: "1px solid #aaa",
-          padding: 10,
-          height: 300,
+          height: "400px",
+          border: "1px solid #ccc",
           overflowY: "auto",
+          padding: 10,
+          marginBottom: 10,
         }}
       >
-        {messages.map((msg, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <b>{msg.user}:</b> {msg.text}
+        {messages.map((m, i) => (
+          <div key={i}>
+            <b>{m.username}:</b> {m.text}
           </div>
         ))}
       </div>
 
-      <div style={{ marginTop: 10 }}>
-        <input
-          style={{ width: "70%" }}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Mesaj yaz..."
-        />
-        <button onClick={sendMessage}>Gönder</button>
-      </div>
+      <input
+        style={{ width: "80%" }}
+        placeholder="Mesaj yaz..."
+        value={msg}
+        onChange={(e) => setMsg(e.target.value)}
+      />
+      <button onClick={sendMessage}>Gönder</button>
     </div>
   );
 }
