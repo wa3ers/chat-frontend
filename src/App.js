@@ -1,119 +1,121 @@
-import React, { useEffect, useState, useRef } from "react";
-import { io } from "socket.io-client";
-import "./App.css";
+import { useState, useEffect } from "react";
+import io from "socket.io-client";
 
+// ✅ Backend URL
 const socket = io("https://chat-backend-cisd.onrender.com");
 
 function App() {
   const [username, setUsername] = useState("");
-  const [tempUser, setTempUser] = useState("");
+  const [tempName, setTempName] = useState("");
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-  const audioRef = useRef(null);
-  const [allowed, setAllowed] = useState(false);
+  const [chat, setChat] = useState([]);
+  const [permission, setPermission] = useState(false);
 
-  // Bildirim izni
-  const requestNotification = () => {
-    Notification.requestPermission().then((res) => {
-      if (res === "granted") {
-        setAllowed(true);
-      }
-    });
-
-    // Ses test
+  // ✅ Bildirim + Ses
+  const notify = (text) => {
     try {
-      audioRef.current.play();
-    } catch {}
+      const audio = new Audio("/notify.mp3");
+      audio.play().catch(() => {});
+    } catch (e) {}
+
+    if (Notification.permission === "granted") {
+      new Notification("Yeni mesaj", { body: text });
+    }
   };
 
+  const requestPermission = () => {
+    Notification.requestPermission().then((result) => {
+      if (result === "granted") {
+        setPermission(true);
+      }
+    });
+  };
+
+  // ✅ Mesaj alma
   useEffect(() => {
-    socket.on("message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    socket.on("chat message", (msg) => {
+      setChat((prev) => [...prev, msg]);
 
+      // Kullanıcının kendi mesajı değilse bildirim
       if (msg.user !== username) {
-        if (allowed) {
-          // Bildirim
-          new Notification(msg.user || "Anonim", {
-            body: msg.text,
-          });
-
-          // Ses
-          try {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play();
-          } catch {}
-        }
+        notify(msg.text);
       }
     });
 
-    return () => socket.off("message");
-  }, [allowed, username]);
+    return () => socket.off("chat message");
+  }, [username]);
 
-  const joinChat = () => {
-    if (!tempUser.trim()) return;
-    setUsername(tempUser);
-  };
-
-  const sendMessage = () => {
+  // ✅ Mesaj yolla
+  const sendMessage = (e) => {
+    e.preventDefault();
     if (!message.trim()) return;
+
     const msg = { user: username || "Anonim", text: message };
-    socket.emit("message", msg);
+    socket.emit("chat message", msg);
     setMessage("");
   };
 
-  return (
-    <div style={{ padding: 20 }}>
-      {/* Ses dosyası */}
-      <audio ref={audioRef} src="/notify.mp3" />
+  // ✅ Kullanıcı adı yoksa giriş ekranı
+  if (!username) {
+    return (
+      <div style={{ padding: "2rem" }}>
+        <h2>Adınızı girin</h2>
+        <input
+          type="text"
+          value={tempName}
+          onChange={(e) => setTempName(e.target.value)}
+        />
 
-      {!username ? (
-        <div>
-          <h2>Kullanıcı adı</h2>
-          <input
-            placeholder="Ad gir"
-            value={tempUser}
-            onChange={(e) => setTempUser(e.target.value)}
-          />
-          <button onClick={joinChat}>Giriş</button>
+        <button onClick={() => setUsername(tempName || "Anonim")}>
+          Giriş
+        </button>
 
-          {/* Bildirim Butonu */}
-          <button onClick={requestNotification} style={{ marginLeft: 10 }}>
-            🔔 Bildirim & Ses Aç
-          </button>
-        </div>
-      ) : (
-        <div>
-          <h1>Chat</h1>
-
-          {/* Bildirim & Ses Aç butonu her zaman görünsün */}
-          <button onClick={requestNotification} style={{ marginBottom: 10 }}>
-            🔔 Bildirim & Ses Aç
-          </button>
-
-          <div
-            style={{
-              border: "1px solid #ccc",
-              padding: 10,
-              minHeight: 300,
-              overflowY: "auto",
-            }}
+        {!permission && (
+          <button
+            style={{ marginLeft: "10px" }}
+            onClick={requestPermission}
           >
-            {messages.map((m, i) => (
-              <div key={i}>
-                <b>{m.user}:</b> {m.text}
-              </div>
-            ))}
-          </div>
+            🔔 Bildirim & Ses Aç
+          </button>
+        )}
+      </div>
+    );
+  }
 
-          <input
-            placeholder="Mesaj yaz..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            style={{ width: 200 }}
-          />
-          <button onClick={sendMessage}>Gönder</button>
-        </div>
+  return (
+    <div style={{ padding: "2rem" }}>
+      <h1>Chat</h1>
+
+      {!permission && (
+        <button onClick={requestPermission}>🔔 Bildirim & Ses Aç</button>
       )}
+
+      <div
+        style={{
+          border: "1px solid #ccc",
+          padding: "1rem",
+          height: "300px",
+          overflowY: "scroll",
+          marginBottom: "1rem",
+        }}
+      >
+        {chat.map((c, i) => (
+          <div key={i}>
+            <b>{c.user}: </b> {c.text}
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={sendMessage}>
+        <input
+          type="text"
+          style={{ width: "250px" }}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Mesaj..."
+        />
+        <button type="submit">Gönder</button>
+      </form>
     </div>
   );
 }
