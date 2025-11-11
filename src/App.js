@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import "./App.css";
-import notifySound from "../public/notify.mp3";
+import notifySound from "./notify.mp3";
 
 const SERVER_URL =
   process.env.REACT_APP_SERVER_URL ||
@@ -17,7 +17,6 @@ function App() {
   const socketRef = useRef(null);
   const audioRef = useRef(null);
 
-  // ✅ SOCKET INIT
   useEffect(() => {
     socketRef.current = io(SERVER_URL, {
       transports: ["websocket"],
@@ -28,19 +27,15 @@ function App() {
       console.log("📥 Alınan mesaj:", msg);
       setChat((prev) => [...prev, msg]);
 
-      // ✅ KENDİ MESAJINSA → SES ÇALMA
       if (msg.user === username) return;
 
-      // ✅ Bildirim + Ses
       if (notifyEnabled) {
         try {
-          // ✅ Ses
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch(() => {});
           }
 
-          // ✅ Tarayıcı bildirimi
           if (document.hidden && "Notification" in window) {
             new Notification(`${msg.user}`, { body: msg.text });
           }
@@ -55,16 +50,13 @@ function App() {
     };
   }, [username, notifyEnabled]);
 
-  // ✅ Mesaj Gönderme
   const sendMessage = () => {
     if (!message.trim()) return;
     const msg = { user: username, text: message };
-
     socketRef.current.emit("chat message", msg);
     setMessage("");
   };
 
-  // ✅ Bildirim + SES aç
   const enableNotify = async () => {
     try {
       if ("Notification" in window) {
@@ -74,7 +66,6 @@ function App() {
         }
       }
 
-      // ✅ iOS Safari PRELOAD FIX
       try {
         if (audioRef.current) {
           await audioRef.current.play();
@@ -85,7 +76,6 @@ function App() {
     } catch {}
   };
 
-  // ✅ Kullanıcı giriş ekranı
   if (!username) {
     return (
       <div style={{ padding: 20 }}>
@@ -105,7 +95,6 @@ function App() {
     <div style={{ padding: 12 }}>
       <audio ref={audioRef} src={notifySound} preload="auto" />
 
-      {/* ✅ BİLDİRİM AÇMA BUTONU */}
       {!notifyEnabled && (
         <button
           onClick={enableNotify}
@@ -121,7 +110,6 @@ function App() {
         </button>
       )}
 
-      {/* ✅ Mesaj Kutusu */}
       <div
         style={{
           height: "60vh",
@@ -144,7 +132,6 @@ function App() {
         ))}
       </div>
 
-      {/* ✅ Mesaj Gönder */}
       <div style={{ marginTop: 12 }}>
         <input
           style={{ width: "70%", padding: 6 }}
