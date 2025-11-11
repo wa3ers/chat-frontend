@@ -1,121 +1,142 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 
-// ✅ Backend URL
 const socket = io("https://chat-backend-cisd.onrender.com");
 
 function App() {
+  const [messages, setMessages] = useState([]);
   const [username, setUsername] = useState("");
-  const [tempName, setTempName] = useState("");
-  const [message, setMessage] = useState("");
-  const [chat, setChat] = useState([]);
-  const [permission, setPermission] = useState(false);
+  const [text, setText] = useState("");
+  const [ready, setReady] = useState(false);
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const audioRef = useRef(null);
+  const msgEndRef = useRef(null);
 
-  // ✅ Bildirim + Ses
-  const notify = (text) => {
+  useEffect(() => {
+    socket.on("message", (msg) => {
+      setMessages((prev) => [...prev, msg]);
+
+      if (notifyEnabled && msg.user !== username) {
+        playSound();
+        showNotification(msg);
+      }
+    });
+
+    return () => {
+      socket.off("message");
+    };
+  }, [notifyEnabled, username]);
+
+  useEffect(() => {
+    msgEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const joinChat = () => {
+    if (!username.trim()) return;
+    setReady(true);
+    socket.emit("join", username);
+  };
+
+  const sendMessage = () => {
+    if (!text.trim()) return;
+    socket.emit("message", { user: username, text });
+    setText("");
+  };
+
+  const enableNotifications = async () => {
     try {
-      const audio = new Audio("/notify.mp3");
-      audio.play().catch(() => {});
-    } catch (e) {}
+      const audio = audioRef.current;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
 
-    if (Notification.permission === "granted") {
-      new Notification("Yeni mesaj", { body: text });
+      setNotifyEnabled(true);
+      Notification.requestPermission();
+      alert("✅ Bildirim & Ses aktif!");
+    } catch (err) {
+      alert("⚠️ Ses için önce ekrana tıklaman lazım!");
     }
   };
 
-  const requestPermission = () => {
-    Notification.requestPermission().then((result) => {
-      if (result === "granted") {
-        setPermission(true);
-      }
-    });
+  const playSound = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.volume = 1;
+      audio.play();
+    }
   };
 
-  // ✅ Mesaj alma
-  useEffect(() => {
-    socket.on("chat message", (msg) => {
-      setChat((prev) => [...prev, msg]);
-
-      // Kullanıcının kendi mesajı değilse bildirim
-      if (msg.user !== username) {
-        notify(msg.text);
-      }
-    });
-
-    return () => socket.off("chat message");
-  }, [username]);
-
-  // ✅ Mesaj yolla
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!message.trim()) return;
-
-    const msg = { user: username || "Anonim", text: message };
-    socket.emit("chat message", msg);
-    setMessage("");
+  const showNotification = (msg) => {
+    if (Notification.permission === "granted") {
+      new Notification(`💬 ${msg.user}`, {
+        body: msg.text,
+      });
+    }
   };
-
-  // ✅ Kullanıcı adı yoksa giriş ekranı
-  if (!username) {
-    return (
-      <div style={{ padding: "2rem" }}>
-        <h2>Adınızı girin</h2>
-        <input
-          type="text"
-          value={tempName}
-          onChange={(e) => setTempName(e.target.value)}
-        />
-
-        <button onClick={() => setUsername(tempName || "Anonim")}>
-          Giriş
-        </button>
-
-        {!permission && (
-          <button
-            style={{ marginLeft: "10px" }}
-            onClick={requestPermission}
-          >
-            🔔 Bildirim & Ses Aç
-          </button>
-        )}
-      </div>
-    );
-  }
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h1>Chat</h1>
+    <div style={{ padding: 20 }}>
+      {!ready ? (
+        <div>
+          <h2>Kullanıcı adı gir</h2>
+          <input
+            placeholder="Ad..."
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <br />
+          <br />
+          <button onClick={joinChat}>Giriş</button>
+        </div>
+      ) : (
+        <>
+          <h1>Chat</h1>
 
-      {!permission && (
-        <button onClick={requestPermission}>🔔 Bildirim & Ses Aç</button>
-      )}
+          {/* SES & BİLDİRİM butonu */}
+          {!notifyEnabled && (
+            <button
+              onClick={enableNotifications}
+              style={{
+                padding: "8px 14px",
+                background: "#1976d2",
+                color: "white",
+                border: 0,
+                borderRadius: 6,
+                cursor: "pointer",
+                marginBottom: 10,
+              }}
+            >
+              🔔 Bildirim & Ses Aç
+            </button>
+          )}
 
-      <div
-        style={{
-          border: "1px solid #ccc",
-          padding: "1rem",
-          height: "300px",
-          overflowY: "scroll",
-          marginBottom: "1rem",
-        }}
-      >
-        {chat.map((c, i) => (
-          <div key={i}>
-            <b>{c.user}: </b> {c.text}
+          <audio ref={audioRef} src="/notify.mp3" preload="auto"></audio>
+
+          <div
+            style={{
+              border: "1px solid #aaa",
+              height: 300,
+              overflowY: "scroll",
+              padding: 10,
+            }}
+          >
+            {messages.map((m, i) => (
+              <div key={i}>
+                <b>{m.user}:</b> {m.text}
+              </div>
+            ))}
+            <div ref={msgEndRef} />
           </div>
-        ))}
-      </div>
 
-      <form onSubmit={sendMessage}>
-        <input
-          type="text"
-          style={{ width: "250px" }}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Mesaj..."
-        />
-        <button type="submit">Gönder</button>
-      </form>
+          <input
+            placeholder="Mesaj yaz..."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            style={{ width: 250, marginTop: 10 }}
+          />
+          <button onClick={sendMessage}>Gönder</button>
+        </>
+      )}
     </div>
   );
 }
