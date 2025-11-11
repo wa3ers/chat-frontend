@@ -2,7 +2,13 @@ import React, { useEffect, useState, useRef } from "react";
 import io from "socket.io-client";
 
 const backendURL = "https://chat-backend1-aib9.onrender.com";
-const socket = io(backendURL, { transports: ["websocket"] });
+
+const socket = io(backendURL, {
+  transports: ["websocket", "polling"],
+});
+
+// ✅ Global erişim için
+window.socket = socket;
 
 function App() {
   const [messages, setMessages] = useState([]);
