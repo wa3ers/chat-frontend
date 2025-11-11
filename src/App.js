@@ -1,223 +1,124 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import io from "socket.io-client";
 
-// Backend URL'in (şu an çalışan)
-const socket = io("https://chat-backend-cisd.onrender.com", {
-  transports: ["websocket", "polling"],
-});
+const socket = io("https://chat-backend-cisd.onrender.com");
 
-export default function App() {
+function App() {
   const [username, setUsername] = useState("");
-  const [isReady, setIsReady] = useState(false);
-  const [chat, setChat] = useState([]);
+  const [tempUsername, setTempUsername] = useState("");
   const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
-  // Bildirim & ses durumları
-  const [notifGranted, setNotifGranted] = useState(
-    typeof Notification !== "undefined" ? Notification.permission === "granted" : false
-  );
-  const [soundEnabled, setSoundEnabled] = useState(false);
-  const audioRef = useRef(null); // public/notify.mp3 çalmak için
+  const audioRef = useRef(null);
 
-  // Socket dinleyicileri
   useEffect(() => {
-    socket.on("connect", () => {
-      // console.log("Bağlandı");
-    });
+    socket.on("message", (data) => {
+      setMessages((prev) => [...prev, data]);
 
-    socket.on("chat message", (msg) => {
-      setChat((prev) => [...prev, msg]);
+      if (permissionGranted) {
+        audioRef.current?.play();
 
-      // 1) Tarayıcı bildirimi (izin varsa ve mesaj başkasından geldiyse)
-      if (notifGranted && msg?.user !== username) {
-        try {
-          new Notification(`${msg.user || "Yeni mesaj"}`, {
-            body: msg.text || "",
-          });
-        } catch {}
-      }
-
-      // 2) Ses (kullanıcı butona bastıysa ve mesaj başkasından geldiyse)
-      if (soundEnabled && audioRef.current && msg?.user !== username) {
-        // iOS/Safari/Chrome autoplay kısıtları için kullanıcı tıklaması sonrası çalışır
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
+        new Notification(`${data.user}`, {
+          body: data.text,
+        });
       }
     });
 
     return () => {
-      socket.off("chat message");
-      socket.off("connect");
+      socket.off("message");
     };
-  }, [notifGranted, soundEnabled, username]);
+  }, [permissionGranted]);
 
-  // Kullanıcı adını onayla
-  const handleReady = (e) => {
-    e.preventDefault();
-    const name = username.trim() || "Kullanıcı";
-    setUsername(name);
-    setIsReady(true);
-    socket.emit("user ready", name);
-  };
-
-  // Mesaj gönder
-  const sendMessage = (e) => {
-    e.preventDefault();
-    const text = message.trim();
-    if (!text) return;
-    const msg = { user: username || "Anonim", text };
-    socket.emit("chat message", msg);
+  const sendMessage = () => {
+    if (!message.trim()) return;
+    socket.emit("sendMessage", { user: username, text: message });
     setMessage("");
   };
 
-  // 🔔 Bildirim & Ses Aç butonu
-  const enableNotifAndSound = async () => {
-    // 1) Bildirim izni
-    if (typeof Notification !== "undefined") {
-      try {
-        const perm = await Notification.requestPermission();
-        setNotifGranted(perm === "granted");
-      } catch {
-        setNotifGranted(false);
-      }
-    }
-    // 2) Ses (autoplay için kullanıcı etkileşimi şart, bu buton tıklaması yeter)
-    try {
-      if (audioRef.current) {
-        await audioRef.current.play(); // kısa çal, sonra hemen durdur
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-      setSoundEnabled(true);
-    } catch {
-      // Sessizce geç
-      setSoundEnabled(false);
+  const joinChat = () => {
+    if (tempUsername.trim()) {
+      setUsername(tempUsername);
     }
   };
 
-  // UI
+  const requestPermission = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setPermissionGranted(true);
+        audioRef.current?.play()
+      } else {
+        alert("Bildirim izni verilmedi.");
+      }
+    } catch (err) {
+      console.error("Bildirim hatası:", err);
+    }
+  };
+
   return (
-    <div style={{ padding: "16px", maxWidth: 720, margin: "0 auto", fontFamily: "system-ui, Arial" }}>
-      <h1 style={{ marginBottom: 8 }}>Sohbet</h1>
-
-      {/* 🔔 Bildirim & Ses kontrolü - HER ZAMAN GÖRÜNSÜN */}
-      <div style={{ margin: "8px 0 16px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button
-          onClick={enableNotifAndSound}
-          style={{
-            background: notifGranted || soundEnabled ? "#16a34a" : "#2563eb",
-            color: "#fff",
-            border: "none",
-            padding: "8px 12px",
-            borderRadius: 8,
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
-          title="Tarayıcı bildirimi izni iste ve bildirim sesini etkinleştir"
-        >
-          🔔 Bildirim & Ses Aç
-        </button>
-
-        <span style={{ fontSize: 13, color: "#555" }}>
-          Bildirim: <b>{notifGranted ? "Açık" : "Kapalı"}</b> • Ses: <b>{soundEnabled ? "Açık" : "Kapalı"}</b>
-        </span>
-      </div>
-
-      {/* Ses dosyası (public/notify.mp3) */}
+    <div style={{ padding: 20 }}>
       <audio ref={audioRef} src="/notify.mp3" preload="auto" />
 
-      {!isReady ? (
-        <form onSubmit={handleReady} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      {!username ? (
+        <div>
+          <h2>Kullanıcı Adı</h2>
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Kullanıcı adın"
-            style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
+            type="text"
+            placeholder="Ad"
+            value={tempUsername}
+            onChange={(e) => setTempUsername(e.target.value)}
           />
-          <button
-            type="submit"
-            style={{
-              background: "#111827",
-              color: "#fff",
-              border: "none",
-              padding: "10px 14px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontWeight: 600,
-            }}
-          >
-            Başla
-          </button>
-        </form>
+          <button onClick={joinChat}>Giriş</button>
+        </div>
       ) : (
         <>
-          <div
+          <h1>Chat</h1>
+
+          {/* 🔔 Buton burada */}
+          <button
+            onClick={requestPermission}
             style={{
-              border: "1px solid #ddd",
+              padding: "10px 14px",
+              marginBottom: 10,
+              background: "#222",
+              color: "#fff",
               borderRadius: 8,
-              padding: 12,
-              height: 360,
-              overflowY: "auto",
-              marginBottom: 12,
-              background: "#fafafa",
+              cursor: "pointer",
             }}
           >
-            {chat.length === 0 ? (
-              <div style={{ color: "#666" }}>Henüz mesaj yok.</div>
-            ) : (
-              chat.map((c, i) => (
-                <div
-                  key={i}
-                  style={{
-                    margin: "8px 0",
-                    display: "flex",
-                    justifyContent: c.user === username ? "flex-end" : "flex-start",
-                  }}
-                >
-                  <div
-                    style={{
-                      background: c.user === username ? "#dbeafe" : "#e5e7eb",
-                      borderRadius: 12,
-                      padding: "8px 12px",
-                      maxWidth: "80%",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
-                      <b>{c.user || "Anonim"}</b>
-                    </div>
-                    <div style={{ fontSize: 15 }}>{c.text}</div>
-                  </div>
-                </div>
-              ))
-            )}
+            🔔 Bildirim & Ses Aç
+          </button>
+
+          <div
+            style={{
+              width: "100%",
+              height: 400,
+              border: "1px solid gray",
+              marginBottom: 10,
+              overflowY: "scroll",
+              padding: 10,
+            }}
+          >
+            {messages.map((msg, idx) => (
+              <p key={idx}>
+                <b>{msg.user}:</b> {msg.text}
+              </p>
+            ))}
           </div>
 
-          <form onSubmit={sendMessage} style={{ display: "flex", gap: 8 }}>
-            <input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Mesaj yaz…"
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-            />
-            <button
-              type="submit"
-              style={{
-                background: "#2563eb",
-                color: "#fff",
-                border: "none",
-                padding: "10px 14px",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Gönder
-            </button>
-          </form>
+          <input
+            type="text"
+            placeholder="Mesaj yaz..."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            style={{ width: 200 }}
+          />
+          <button onClick={sendMessage}>Gönder</button>
         </>
       )}
     </div>
   );
 }
+
+export default App;
