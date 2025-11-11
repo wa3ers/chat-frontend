@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import io from "socket.io-client";
 
 const socket = io("https://chat-backend-cisd.onrender.com", {
@@ -6,118 +6,122 @@ const socket = io("https://chat-backend-cisd.onrender.com", {
 });
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
-  const [isReady, setIsReady] = useState(false);
-  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [tempName, setTempName] = useState("");
+  const [message, setMessage] = useState("");
+  const [chat, setChat] = useState([]);
 
-  const audioRef = useRef(
-    typeof Audio !== "undefined" ? new Audio("/notify.mp3") : null
-  );
+  // Bildirim için
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const audio = new Audio("/notify.mp3");
 
-  // Bildirim izni & ses
-  const enableNotifications = async () => {
-    try {
-      const p = await Notification.requestPermission();
-      if (p === "granted") {
-        setNotifEnabled(true);
-        audioRef.current?.play().catch(() => {});
-      }
-    } catch (e) {}
+  // İlk giriş → isim sor
+  const handleSetName = () => {
+    if (!tempName.trim()) return;
+    setUsername(tempName.trim());
   };
 
-  // Mesaj alma
+  // socket dinleme
   useEffect(() => {
-    socket.on("message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    socket.on("chat message", (msg) => {
+      setChat((prev) => [...prev, msg]);
 
-      if (notifEnabled) {
-        audioRef.current?.play().catch(() => {});
+      // Bildirim + ses
+      if (notifyEnabled) {
         try {
-          new Notification(`${msg.user}: ${msg.text}`);
-        } catch (e) {}
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        } catch {}
+        if (document.hidden) {
+          new Notification(`${msg.user}`, {
+            body: msg.text,
+          });
+        }
       }
     });
 
-    return () => socket.off("message");
-  }, [notifEnabled]);
+    return () => socket.off("chat message");
+  }, [notifyEnabled]);
 
-  // Kullanıcı adını ayarla
-  const handleStart = () => {
-    if (!username.trim()) return;
-    setIsReady(true);
+  // mesaj gönder
+  const sendMessage = (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+
+    const msg = { user: username || "Anonim", text: message };
+    socket.emit("chat message", msg);
+    setMessage("");
   };
 
-  // Mesaj gönder
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    const msg = { user: username, text: input };
-    socket.emit("message", msg);
-    setInput("");
+  // bildirim aç
+  const enableNotification = () => {
+    Notification.requestPermission().then((res) => {
+      if (res === "granted") {
+        setNotifyEnabled(true);
+        audio.play().catch(() => {});
+      } else {
+        alert("İzin verilmedi!");
+      }
+    });
   };
+
+  // Username ekranı
+  if (!username) {
+    return (
+      <div style={{ padding: 20 }}>
+        <h2>Kullanıcı Adı:</h2>
+        <input
+          value={tempName}
+          onChange={(e) => setTempName(e.target.value)}
+          placeholder="Ad..."
+        />
+        <button onClick={handleSetName}>Giriş</button>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>Chat</h1>
-
-      {!isReady && (
-        <div>
-          <input
-            placeholder="Kullanıcı adı..."
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{ padding: 5 }}
-          />
-          <button onClick={handleStart} style={{ marginLeft: "10px" }}>
-            Başla
-          </button>
-        </div>
+    <div style={{ padding: 20 }}>
+      {/* Bildirim butonu */}
+      {!notifyEnabled && (
+        <button
+          onClick={enableNotification}
+          style={{
+            padding: 10,
+            background: "orange",
+            marginBottom: 15,
+            borderRadius: 8,
+          }}
+        >
+          🔔 Bildirim & Ses Aç
+        </button>
       )}
 
-      {isReady && (
-        <>
-          {!notifEnabled && (
-            <button
-              onClick={enableNotifications}
-              style={{
-                position: "absolute",
-                top: 10,
-                right: 10,
-                padding: 8,
-                background: "yellow",
-              }}
-            >
-              🔔 Bildirim & Ses Aç
-            </button>
-          )}
+      <h2>Merhaba {username}</h2>
 
-          <div
-            style={{
-              border: "1px solid black",
-              height: "350px",
-              overflowY: "auto",
-              padding: "10px",
-            }}
-          >
-            {messages.map((msg, i) => (
-              <p key={i}>
-                <b>{msg.user}:</b> {msg.text}
-              </p>
-            ))}
+      <div
+        style={{
+          border: "1px solid gray",
+          height: 300,
+          overflowY: "scroll",
+          padding: 10,
+        }}
+      >
+        {chat.map((c, i) => (
+          <div key={i}>
+            <b>{c.user}: </b> {c.text}
           </div>
+        ))}
+      </div>
 
-          <input
-            placeholder="Mesaj yaz..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            style={{ marginTop: 10, padding: 5, width: "200px" }}
-          />
-          <button onClick={sendMessage} style={{ marginLeft: "10px" }}>
-            Gönder
-          </button>
-        </>
-      )}
+      <form onSubmit={sendMessage}>
+        <input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Mesaj..."
+        />
+        <button type="submit">Gönder</button>
+      </form>
     </div>
   );
 }
