@@ -1,110 +1,126 @@
 import React, { useEffect, useState, useRef } from "react";
-import io from "socket.io-client";
+import { io } from "socket.io-client";
 
-const socket = io("https://chat-backend1-ai8g.onrender.com", {
-  transports: ["websocket"],
+const SOCKET_URL = "https://chat-backend1-aib9.onrender.com";
+
+const socket = io(SOCKET_URL, {
+  transports: ["websocket", "polling"],
 });
 
 function App() {
-  const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
-  const [tempName, setTempName] = useState("");
+  const [username, setUsername] = useState("");
+  const [inputName, setInputName] = useState("");
+  const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
-  const [msg, setMsg] = useState("");
-  const [notifAllowed, setNotifAllowed] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
+
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   const audioRef = useRef(null);
 
+  // Bildirim sesi yükle
   useEffect(() => {
-    socket.on("chat message", (msgObj) => {
-      setMessages((prev) => [...prev, msgObj]);
+    audioRef.current = new Audio("/notify.mp3");
+  }, []);
 
-      if (notifAllowed && document.hidden) {
-        new Notification(`${msgObj.username}: ${msgObj.text}`);
+  // 🔥 Socket bağlanınca
+  useEffect(() => {
+    socket.on("connect", () => console.log("✅ Socket bağlandı"));
+    socket.on("disconnect", () => console.log("❌ Socket koptu"));
+
+    // Gelen mesaj
+    socket.on("chatMessage", (data) => {
+      setMessages((prev) => [...prev, data]);
+
+      if (audioEnabled && audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
       }
 
-      if (audioReady) {
-        audioRef.current?.play?.();
+      if (notifEnabled && document.hidden) {
+        new Notification(`${data.user}: ${data.text}`);
       }
     });
 
-    return () => socket.off("chat message");
-  }, [notifAllowed, audioReady]);
+    return () => {
+      socket.off("chatMessage");
+    };
+  }, [audioEnabled, notifEnabled]);
 
-  const requestPermission = () => {
-    Notification.requestPermission().then((perm) => {
-      if (perm === "granted") {
-        setNotifAllowed(true);
-      }
-    });
-  };
-
-  const enableSound = () => {
-    audioRef.current.play().then(() => {
-      setAudioReady(true);
-    });
-  };
-
-  const saveName = () => {
-    if (tempName.trim().length > 0) {
-      setUsername(tempName);
-      localStorage.setItem("username", tempName);
+  // Bildirim izni
+  const enableNotification = async () => {
+    let perm = await Notification.requestPermission();
+    if (perm === "granted") {
+      setNotifEnabled(true);
+    } else {
+      alert("Bildirim izni verilmedi!");
     }
   };
 
-  const sendMessage = () => {
-    if (!msg.trim() || !username.trim()) return;
-    socket.emit("chat message", { username, text: msg });
-    setMsg("");
+  const enableSound = () => {
+    setAudioEnabled(true);
   };
 
-  if (!username) {
-    return (
-      <div style={{ padding: 20 }}>
-        <h2>İsminizi girin:</h2>
-        <input
-          value={tempName}
-          onChange={(e) => setTempName(e.target.value)}
-        />
-        <button onClick={saveName}>Kaydet</button>
-      </div>
-    );
-  }
+  // Mesaj gönderme
+  const sendMessage = () => {
+    if (!message.trim() || !username) return;
+    const data = { user: username, text: message };
+    socket.emit("chatMessage", data);
+    setMessage("");
+  };
+
+  const startChat = () => {
+    if (inputName.trim()) {
+      setUsername(inputName.trim());
+    }
+  };
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Hoş geldin, {username}</h2>
+      {!username ? (
+        <div>
+          <h2>Kullanıcı adını gir:</h2>
+          <input
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+          />
+          <button onClick={startChat}>Başla</button>
+        </div>
+      ) : (
+        <>
+          <h1>Hoş geldin, {username}</h1>
 
-      <div style={{ marginBottom: 10 }}>
-        <button onClick={requestPermission}>🔔 Bildirim Aç</button>
-        <button onClick={enableSound}>🔊 Ses Aç</button>
-      </div>
+          <button onClick={enableNotification}>🔔 Bildirim Aç</button>
+          <button onClick={enableSound}>🔊 Ses Aç</button>
 
-      <audio ref={audioRef} src="/notify.mp3" preload="auto" />
-
-      <div
-        style={{
-          height: "400px",
-          border: "1px solid #ccc",
-          overflowY: "auto",
-          padding: 10,
-          marginBottom: 10,
-        }}
-      >
-        {messages.map((m, i) => (
-          <div key={i}>
-            <b>{m.username}:</b> {m.text}
+          <div
+            style={{
+              width: "100%",
+              height: 400,
+              border: "1px solid gray",
+              overflowY: "auto",
+              marginTop: 20,
+              padding: 10,
+            }}
+          >
+            {messages.map((m, i) => (
+              <div key={i}>
+                <b>{m.user}</b>: {m.text}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <input
-        style={{ width: "80%" }}
-        placeholder="Mesaj yaz..."
-        value={msg}
-        onChange={(e) => setMsg(e.target.value)}
-      />
-      <button onClick={sendMessage}>Gönder</button>
+          <div style={{ marginTop: 10 }}>
+            <input
+              style={{ width: "80%" }}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Mesaj yaz..."
+            />
+            <button onClick={sendMessage}>Gönder</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
