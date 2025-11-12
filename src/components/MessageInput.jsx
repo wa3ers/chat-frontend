@@ -1,34 +1,29 @@
 import React, { useState } from "react";
+import { useUser } from "../contexts/UserContext";
 
-export default function MessageInput({ onSend }) {
+const MessageInput = () => {
+  const { sendMessage, username } = useUser(); // ✅ addMessage yerine sendMessage
   const [text, setText] = useState("");
 
-  const handleSend = () => {
-    onSend(text);
-    setText("");
-  };
-
-  const onKey = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (text.trim()) {
+      sendMessage(text); // ✅ burası da düzeltildi
+      setText("");
     }
   };
 
   return (
-    <div className="input-area">
-      <button className="icon-btn" title="Emoji">😊</button>
-      <textarea
-        className="input"
-        placeholder="Mesaj yazın…"
+    <form onSubmit={handleSend} className="message-input">
+      <input
+        type="text"
+        placeholder={`Mesaj yazın... (${username || "anonim"})`}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKey}
-        rows={1}
       />
-      <button className="send-btn" onClick={handleSend}>
-        Gönder
-      </button>
-    </div>
+      <button type="submit">Gönder</button>
+    </form>
   );
-}
+};
+
+export default MessageInput;

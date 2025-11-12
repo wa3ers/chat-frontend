@@ -1,0 +1,38 @@
+.input-row {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #0f2227;         /* senin koyu arka plana uygun */
+  border-top: 1px solid rgba(255,255,255,0.06);
+  z-index: 5;
+}
+
+.input-row .input {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  padding: 0 14px;
+  outline: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #102a2f;
+  color: #e8f6f2;
+  font-size: 15px;
+}
+
+.input-row .send-btn {
+  padding: 0 16px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: #0fa37f;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.input-row .send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
